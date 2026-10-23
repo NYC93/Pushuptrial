@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f172a">
+<title>Push-Up Counter</title>
+<style>
+  :root{--bg:#0f172a;--panel:#1e293b;--line:#334155;--txt:#e2e8f0;--mut:#94a3b8;--ok:#22c55e;--bad:#ef4444;--acc:#22d3ee;--warn:#facc15}
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  body{margin:0;background:var(--bg);color:var(--txt);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+  header{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;gap:8px}
+  .count{font-size:52px;font-weight:800;line-height:1;color:var(--ok)}
+  .sub{font-size:13px;color:var(--mut)}
+  .norep{font-size:22px;font-weight:700;color:var(--bad)}
+  #state{font-size:14px;font-weight:600;padding:4px 10px;border-radius:999px;background:var(--panel);text-align:center}
+  main{display:flex;flex-direction:column;gap:8px;padding:0 8px 16px}
+  #stage{position:relative;width:100%;display:flex;justify-content:center;background:#000;border-radius:10px;overflow:hidden;min-height:200px}
+  #cv{display:block;touch-action:none;background:#000;position:relative;z-index:1}
+  #flash{position:absolute;inset:0;pointer-events:none;opacity:0;transition:opacity .35s;z-index:2}
+  #msg{position:absolute;left:0;right:0;top:30%;text-align:center;color:var(--mut);padding:0 20px;pointer-events:none;z-index:3}
+  .btns{display:flex;flex-wrap:wrap;gap:6px;position:relative;z-index:5}
+  button{flex:1 1 auto;min-width:86px;padding:12px 8px;border:0;border-radius:10px;background:var(--panel);color:var(--txt);font-size:14px;font-weight:600;cursor:pointer;touch-action:manipulation}
+  button:active{transform:scale(.97)}
+  button.pri{background:var(--acc);color:#0f172a}
+  button.on{outline:2px solid var(--warn)}
+  .chips{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+  .chip{background:var(--panel);border-radius:10px;padding:6px;text-align:center;border:2px solid transparent}
+  .chip b{display:block;font-size:20px}
+  .chip span{font-size:11px;color:var(--mut)}
+  .chip.ok{border-color:var(--ok)} .chip.bad{border-color:var(--bad)} .chip.off{opacity:.4}
+  details{background:var(--panel);border-radius:10px;padding:8px 10px}
+  summary{font-weight:700;cursor:pointer;padding:4px 0}
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  td{padding:4px 2px}
+  input[type=number]{width:70px;padding:7px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--txt);font-size:16px}
+  input[type=range]{width:100%}
+  label.row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:5px 0;font-size:14px}
+  select{padding:7px;border-radius:8px;background:var(--bg);color:var(--txt);border:1px solid var(--line);font-size:16px}
+  #swatch{display:inline-block;width:22px;height:22px;border-radius:6px;border:2px solid #fff;vertical-align:middle}
+  #log{font-size:13px;max-height:140px;overflow:auto;color:var(--mut);margin:0;padding-left:18px}
+  #log li.g{color:var(--ok)} #log li.r{color:#fca5a5}
+  .help{font-size:13px;color:var(--mut);line-height:1.5}
+  #errBox{display:none;position:fixed;left:8px;right:8px;bottom:8px;z-index:99;background:#7f1d1d;color:#fff;padding:10px;border-radius:10px;font-size:13px}
+  @media (orientation:landscape) and (max-height:540px){
+    main{flex-direction:row;align-items:flex-start}
+    #left{flex:1.4} #right{flex:1;max-height:calc(100vh - 80px);overflow:auto}
+    .count{font-size:40px}
+  }
+  #left,#right{display:flex;flex-direction:column;gap:8px;min-width:0}
+</style>
+</head>
+<body>
+<header>
+  <div><div class="count" id="count">0</div><div class="sub">Valid reps</div></div>
+  <div id="state">Not started</div>
+  <div style="text-align:right"><div class="norep" id="norep">0</div><div class="sub">No-reps</div></div>
+</header>
+
+<main>
+  <div id="left">
+    <div id="stage">
+      <canvas id="cv"></canvas>
+      <div id="flash"></div>
+      <div id="msg">Tap <b>Start</b> to turn on the camera.<br>Use landscape, side-on view of the student.</div>
+    </div>
+    <div class="btns">
+      <button type="button" class="pri" id="startBtn">▶ Start</button>
+      <button type="button" id="flipBtn">🔄 Camera</button>
+      <button type="button" id="pickBtn">🎯 Pick colour</button>
+      <button type="button" id="setLineBtn">📏 Line @ marker</button>
+      <button type="button" id="resetBtn">↺ Reset</button>
+    </div>
+    <div class="chips" id="chips"></div>
+  </div>
+
+  <div id="right">
+    <details open>
+      <summary>Joint angle requirements (°)</summary>
+      <table id="jointTable"></table>
+      <label class="row">Require elbow lock-out at top before next rep <input type="checkbox" id="lockOn"></label>
+      <label class="row">Lock-out elbow ≥ <input type="number" id="lockVal"></label>
+    </details>
+    <details>
+      <summary>Target line</summary>
+      <label class="row">Line height <span id="lineVal"></span></label>
+      <input type="range" id="lineY" min="0.05" max="0.95" step="0.005">
+      <div class="help">Drag up/down on the video to move the line, or get the student into the bottom position and tap <b>Line @ marker</b>.</div>
+    </details>
+    <details>
+      <summary>Colour marker <span id="swatch"></span></summary>
+      <label class="row">Hue <span id="hueV"></span></label><input type="range" id="hue" min="0" max="359" step="1">
+      <label class="row">Hue tolerance ± <span id="hueTolV"></span></label><input type="range" id="hueTol" min="3" max="60" step="1">
+      <label class="row">Min saturation <span id="sMinV"></span></label><input type="range" id="sMin" min="0" max="1" step="0.01">
+      <label class="row">Min brightness <span id="vMinV"></span></label><input type="range" id="vMin" min="0" max="1" step="0.01">
+      <label class="row">Min marker size (px) <input type="number" id="minPix"></label>
+      <label class="row">Only search around the torso <input type="checkbox" id="torso"></label>
+      <label class="row">Show colour mask (for tuning) <input type="checkbox" id="showMask"></label>
+    </details>
+    <details>
+      <summary>Other settings</summary>
+      <label class="row">Pose model
+        <select id="model"><option value="lite">Lite (faster)</option><option value="full">Full (more accurate)</option></select></label>
+      <label class="row">Beep on rep <input type="checkbox" id="beep"></label>
+      <label class="row">Speak rep count <input type="checkbox" id="voice"></label>
+      <label class="row">Mirror front camera <input type="checkbox" id="mirrorFront"></label>
+      <button type="button" id="defaultsBtn">Restore default settings</button>
+    </details>
+    <details>
+      <summary>Rep log</summary>
+      <ol id="log"></ol>
+    </details>
+    <details>
+      <summary>How to set up</summary>
+      <div class="help">
+        1. Stick bright tape (e.g. yellow) on the side of the chest facing the camera.<br>
+        2. Phone in <b>landscape</b>, 2–3 m away, side-on, at floor height. Whole body (ear to ankle) in frame.<br>
+        3. Tap <b>Pick colour</b>, then tap the tape in the video.<br>
+        4. Set the target line (drag, or bottom position + <b>Line @ marker</b>).<br>
+        5. A rep counts when the tape touches the line <b>while</b> all enabled joints are in range, then the student pushes back up.<br>
+        Knee/hip/neck angles are measured on the <b>floor side</b>: above 180° = sagging, below 180° = piking (neck: below 180° = head dropping).
+      </div>
+    </details>
+  </div>
+</main>
+
+<video id="vid" playsinline webkit-playsinline muted autoplay style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none"></video>
+<div id="errBox"></div>
+
+<script>
+window.addEventListener('error',function(e){var b=document.getElementById('errBox');b.style.display='block';b.textContent='Error: '+(e.message||e);});
+window.addEventListener('unhandledrejection',function(e){var b=document.getElementById('errBox');b.style.display='block';b.textContent='Error: '+((e.reason&&e.reason.message)||e.reason);});
+
+(function(){
+var $=function(id){return document.getElementById(id);};
+var video=$('vid'),cv=$('cv'),ctx=cv.getContext('2d',{willReadFrequently:true});
+var small=document.createElement('canvas'),sctx=small.getContext('2d',{willReadFrequently:true});
+function clone(o){return JSON.parse(JSON.stringify(o));}
+
+/* ---------- Settings ---------- */
+var JOINTS=[{k:'knee',label:'Knee'},{k:'hip',label:'Hip'},{k:'elbow',label:'Elbow'},{k:'neck',label:'Neck'}];
+var DEFAULTS={
+  joints:{knee:{on:true,min:160,max:195},hip:{on:true,min:175,max:190},elbow:{on:true,min:80,max:180},neck:{on:true,min:170,max:195}},
+  lockOn:true,lockVal:150,lineY:0.6,hue:55,hueTol:15,sMin:0.45,vMin:0.45,minPix:12,torso:true,showMask:false,
+  model:'lite',beep:true,voice:false,mirrorFront:true,hyst:0.025
+};
+var KEY='pushupCounterSettings_v2';
+function merge(a,b){for(var k in b){if(b[k]&&typeof b[k]==='object')a[k]=merge(a[k]||{},b[k]);else a[k]=b[k];}return a;}
+function load(){try{var s=JSON.parse(localStorage.getItem(KEY));if(s)return merge(clone(DEFAULTS),s);}catch(e){}return clone(DEFAULTS);}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(S));}catch(e){}}
+var S=load();
+
+/* ---------- UI ---------- */
+function buildUI(){
+  var t=$('jointTable'),html='<tr><td>On</td><td>Joint</td><td>Min</td><td>Max</td></tr>',chips='';
+  JOINTS.forEach(function(j){
+    html+='<tr><td><input type="checkbox" id="on_'+j.k+'"></td><td>'+j.label+'</td><td><input type="number" inputmode="numeric" id="min_'+j.k+'"></td><td><input type="number" inputmode="numeric" id="max_'+j.k+'"></td></tr>';
+    chips+='<div class="chip" id="chip_'+j.k+'"><span>'+j.label+'</span><b id="ang_'+j.k+'">–</b><span id="rng_'+j.k+'"></span></div>';
+  });
+  t.innerHTML=html; $('chips').innerHTML=chips;
+  JOINTS.forEach(function(j){
+    $('on_'+j.k).addEventListener('change',function(e){S.joints[j.k].on=e.target.checked;save();refreshChips();});
+    $('min_'+j.k).addEventListener('input',function(e){if(e.target.value!==''){S.joints[j.k].min=+e.target.value;save();refreshChips();}});
+    $('max_'+j.k).addEventListener('input',function(e){if(e.target.value!==''){S.joints[j.k].max=+e.target.value;save();refreshChips();}});
+  });
+  ['lineY','sMin','vMin','hue','hueTol','minPix','lockVal'].forEach(function(id){
+    $(id).addEventListener('input',function(e){if(e.target.value==='')return;S[id]=parseFloat(e.target.value);save();syncLabels();});
+  });
+  ['lockOn','torso','showMask','beep','voice','mirrorFront'].forEach(function(id){
+    $(id).addEventListener('change',function(e){S[id]=e.target.checked;save();if(id==='mirrorFront')mirror=(facing==='user')&&S.mirrorFront;});
+  });
+  $('model').addEventListener('change',function(e){S.model=e.target.value;save();landmarker=null;if(running)loadModel();});
+  $('defaultsBtn').addEventListener('click',function(){S=clone(DEFAULTS);save();syncInputs();});
+  syncInputs();
+}
+function syncInputs(){
+  JOINTS.forEach(function(j){$('on_'+j.k).checked=S.joints[j.k].on;$('min_'+j.k).value=S.joints[j.k].min;$('max_'+j.k).value=S.joints[j.k].max;});
+  ['lineY','hue','hueTol','sMin','vMin','minPix','lockVal'].forEach(function(i){$(i).value=S[i];});
+  ['lockOn','torso','showMask','beep','voice','mirrorFront'].forEach(function(i){$(i).checked=S[i];});
+  $('model').value=S.model;syncLabels();refreshChips();
+}
+function syncLabels(){
+  $('lineVal').textContent=Math.round(S.lineY*100)+'% from top';
+  $('hueV').textContent=S.hue+'°';$('hueTolV').textContent=S.hueTol+'°';
+  $('sMinV').textContent=(+S.sMin).toFixed(2);$('vMinV').textContent=(+S.vMin).toFixed(2);
+  $('swatch').style.background='hsl('+S.hue+',90%,55%)';
+}
+function refreshChips(){JOINTS.forEach(function(j){var c=S.joints[j.k];$('rng_'+j.k).textContent=c.min+'–'+c.max+'°';$('chip_'+j.k).classList.toggle('off',!c.on);});}
+
+/* ---------- Camera ---------- */
+var stream=null,facing='environment',running=false,mirror=false,wakeLock=null;
+function stopStream(){if(stream){stream.getTracks().forEach(function(t){t.stop();});stream=null;}}
+function startCamera(){
+  stopStream();
+  var tries=[
+    {audio:false,video:{facingMode:{ideal:facing},width:{ideal:1280},height:{ideal:720}}},
+    {audio:false,video:{facingMode:facing}},
+    {audio:false,video:true}];
+  var i=0;
+  function attempt(){
+    return navigator.mediaDevices.getUserMedia(tries[i]).catch(function(err){
+      if(err&&(err.name==='NotAllowedError'||err.name==='SecurityError'))throw err;
+      i++; if(i>=tries.length)throw err; return attempt();
+    });
+  }
+  return attempt().then(function(s){
+    stream=s;video.srcObject=s;video.setAttribute('playsinline','');video.muted=true;
+    mirror=(facing==='user')&&S.mirrorFront;
+    return video.play();
+  });
+}
+function fitCanvas(){
+  if(!cv.width)return;
+  var land=window.matchMedia('(orientation:landscape) and (max-height:540px)').matches;
+  var maxW=$('stage').clientWidth,maxH=window.innerHeight*(land?0.8:0.6);
+  var r=cv.width/cv.height,w=maxW,h=w/r; if(h>maxH){h=maxH;w=h*r;}
+  cv.style.width=w+'px';cv.style.height=h+'px';
+}
+window.addEventListener('resize',fitCanvas);
+
+/* ---------- Pose model (MediaPipe, loaded on demand) ---------- */
+var landmarker=null,vision=null,fileset=null,loading=false,lastTs=0;
+var MODELS={
+  lite:'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task',
+  full:'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task'};
+var CDN='https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14';
+function loadModel(){
+  if(loading)return; loading=true; setState('Loading pose model…');
+  var p=vision?Promise.resolve():import(CDN+'/vision_bundle.mjs').then(function(m){vision=m;return m.FilesetResolver.forVisionTasks(CDN+'/wasm');}).then(function(f){fileset=f;});
+  p.then(function(){
+    function opts(d){return{baseOptions:{modelAssetPath:MODELS[S.model],delegate:d},runningMode:'VIDEO',numPoses:1,minPoseDetectionConfidence:0.5,minPosePresenceConfidence:0.5,minTrackingConfidence:0.5};}
+    return vision.PoseLandmarker.createFromOptions(fileset,opts('GPU')).catch(function(){return vision.PoseLandmarker.createFromOptions(fileset,opts('CPU'));});
+  }).then(function(lm){landmarker=lm;lastTs=0;setState('Ready – get into top position');})
+   .catch(function(e){console.error(e);setState('Pose model failed – check internet');showErr('Pose model could not load: '+(e.message||e)+'. Check internet / school Wi-Fi filter.');})
+   .then(function(){loading=false;});
+}
+function showErr(t){var b=$('errBox');b.style.display='block';b.textContent=t;setTimeout(function(){b.style.display='none';},8000);}
+
+/* ---------- Geometry ---------- */
+var IDX={left:{ear:7,sh:11,el:13,wr:15,hip:23,kn:25,an:27},right:{ear:8,sh:12,el:14,wr:16,hip:24,kn:26,an:28}};
+function interior(A,B,C){
+  var ax=A.x-B.x,ay=A.y-B.y,cx=C.x-B.x,cy=C.y-B.y,d=Math.hypot(ax,ay)*Math.hypot(cx,cy);
+  if(!d)return null; return Math.acos(Math.max(-1,Math.min(1,(ax*cx+ay*cy)/d)))*180/Math.PI;
+}
+function floorSide(A,B,C){
+  var th=interior(A,B,C); if(th==null)return null;
+  if(Math.abs(C.x-A.x)<1e-6)return th;
+  var t=(B.x-A.x)/(C.x-A.x),yLine=A.y+t*(C.y-A.y);
+  return B.y>yLine?360-th:th;
+}
+var VIS=0.5,smooth={};
+function computeAngles(p,side){
+  var out={knee:null,hip:null,elbow:null,neck:null};
+  if(p){
+    var i=IDX[side],g=function(n){return p[i[n]];};
+    var vis=function(){for(var k=0;k<arguments.length;k++)if(g(arguments[k]).v<VIS)return false;return true;};
+    if(vis('hip','kn','an'))out.knee=floorSide(g('hip'),g('kn'),g('an'));
+    if(vis('sh','hip','kn'))out.hip=floorSide(g('sh'),g('hip'),g('kn'));
+    if(vis('sh','el','wr'))out.elbow=interior(g('sh'),g('el'),g('wr'));
+    if(vis('ear','sh','hip'))out.neck=floorSide(g('ear'),g('sh'),g('hip'));
+  }
+  for(var k in out){
+    if(out[k]==null){smooth[k]=null;continue;}
+    smooth[k]=smooth[k]==null?out[k]:smooth[k]+0.5*(out[k]-smooth[k]);
+    out[k]=Math.round(smooth[k]);
+  }
+  return out;
+}
+function jointFails(a){
+  var f=[];
+  JOINTS.forEach(function(j){var c=S.joints[j.k];if(!c.on)return;var v=a[j.k];
+    if(v==null)f.push(j.label+' not visible');
+    else if(v<c.min||v>c.max)f.push(j.label+' '+v+'° (need '+c.min+'–'+c.max+'°)');});
+  return f;
+}
+
+/* ---------- Colour marker ---------- */
+function rgb2hsv(r,g,b){r/=255;g/=255;b/=255;var mx=Math.max(r,g,b),mn=Math.min(r,g,b),d=mx-mn,h=0;
+  if(d){if(mx===r)h=((g-b)/d)%6;else if(mx===g)h=(b-r)/d+2;else h=(r-g)/d+4;h*=60;if(h<0)h+=360;}
+  return[h,mx?d/mx:0,mx];}
+var maskPts=[];
+function detectMarker(W,H,p){
+  var SW=200,SH=Math.round(H/W*SW); if(small.width!==SW||small.height!==SH){small.width=SW;small.height=SH;}
+  sctx.drawImage(cv,0,0,SW,SH);
+  var d=sctx.getImageData(0,0,SW,SH).data,sc=SW/W,x0=0,y0=0,x1=SW,y1=SH;
+  if(S.torso&&p){
+    var ids=[11,12,23,24].filter(function(i){return p[i].v>0.3;});
+    if(ids.length>=2){
+      var xs=ids.map(function(i){return p[i].x*sc;}),ys=ids.map(function(i){return p[i].y*sc;});
+      var mnx=Math.min.apply(null,xs),mxx=Math.max.apply(null,xs),mny=Math.min.apply(null,ys),mxy=Math.max.apply(null,ys);
+      var pad=0.35*Math.max(mxx-mnx,mxy-mny)+0.05*SW;
+      x0=Math.max(0,Math.floor(mnx-pad));x1=Math.min(SW,Math.ceil(mxx+pad));
+      y0=Math.max(0,Math.floor(mny-pad));y1=Math.min(SH,Math.ceil(mxy+pad));
+    }
+  }
+  var xsM=[],ysM=[];maskPts=[];
+  for(var y=y0;y<y1;y++)for(var x=x0;x<x1;x++){
+    var o=(y*SW+x)*4,hsv=rgb2hsv(d[o],d[o+1],d[o+2]),dh=Math.abs(hsv[0]-S.hue);if(dh>180)dh=360-dh;
+    if(dh<=S.hueTol&&hsv[1]>=S.sMin&&hsv[2]>=S.vMin){xsM.push(x);ysM.push(y);if(S.showMask)maskPts.push([x,y]);}
+  }
+  var region={x:x0/sc,y:y0/sc,w:(x1-x0)/sc,h:(y1-y0)/sc};
+  if(xsM.length<S.minPix)return{found:false,region:region};
+  var num=function(a,b){return a-b;};xsM.sort(num);ysM.sort(num);
+  var q=function(arr,f){return arr[Math.min(arr.length-1,Math.floor(arr.length*f))];};
+  var sx=0,sy=0;for(var n=0;n<xsM.length;n++){sx+=xsM[n];sy+=ysM[n];}
+  return{found:true,region:region,cx:sx/xsM.length/sc,cy:sy/ysM.length/sc,left:q(xsM,.05)/sc,right:(q(xsM,.95)+1)/sc,top:q(ysM,.05)/sc,bottom:(q(ysM,.95)+1)/sc};
+}
+
+/* ---------- Rep logic ---------- */
+var state='waiting',count=0,noRep=0,rep=null,lastMarker=null;
+function lockoutOK(a){return !S.lockOn||(a.elbow!=null&&a.elbow>=S.lockVal);}
+function stateLabel(){return{waiting:'Get into top position',up:'Ready ▼ go down',down:'At line ▲ push up',rising:'Lock out elbows'}[state];}
+function updateState(a,m,H){
+  var lineY=S.lineY*H,hyst=S.hyst*H,fails=jointFails(a),ok=fails.length===0;
+  if(!m.found){setState(stateLabel()+' · marker not found');return;}
+  var touching=m.bottom>=lineY,above=m.bottom<lineY-hyst;
+  if(state==='waiting'){if(above)state=lockoutOK(a)?'up':'rising';}
+  else if(state==='up'){if(touching){state='down';rep={ok:false,best:null};}}
+  else if(state==='down'){
+    if(touching){if(ok)rep.ok=true;else if(!rep.best||fails.length<rep.best.length)rep.best=fails;}
+    if(above){finishRep();state=lockoutOK(a)?'up':'rising';}
+  }
+  else if(state==='rising'){if(lockoutOK(a))state='up';}
+  setState(stateLabel());
+}
+function finishRep(){
+  if(rep.ok){count++;$('count').textContent=count;flash('rgba(34,197,94,.35)');sound(true);addLog('Rep '+count+' ✓','g');}
+  else{noRep++;$('norep').textContent=noRep;flash('rgba(239,68,68,.35)');sound(false);addLog('No rep – '+(rep.best||['form']).join(', '),'r');}
+}
+function addLog(t,c){var li=document.createElement('li');li.textContent=t;li.className=c||'';$('log').insertBefore(li,$('log').firstChild);}
+function setState(t){$('state').textContent=t;}
+function flash(c){var f=$('flash');f.style.transition='none';f.style.background=c;f.style.opacity=1;requestAnimationFrame(function(){f.style.transition='opacity .5s';f.style.opacity=0;});}
+
+/* ---------- Sound ---------- */
+var actx=null;
+function sound(good){
+  try{if(S.beep&&actx){var o=actx.createOscillator(),g=actx.createGain();o.frequency.value=good?880:220;o.connect(g);g.connect(actx.destination);
+    g.gain.setValueAtTime(0.25,actx.currentTime);g.gain.exponentialRampToValueAtTime(0.001,actx.currentTime+0.25);o.start();o.stop(actx.currentTime+0.25);}}catch(e){}
+  if(S.voice&&good&&'speechSynthesis' in window){speechSynthesis.cancel();speechSynthesis.speak(new SpeechSynthesisUtterance(String(count)));}
+  if(navigator.vibrate)navigator.vibrate(good?60:[40,40,40]);
+}
+
+/* ---------- Main loop ---------- */
+var lastVT=-1;
+function loop(){
+  if(!running)return;
+  if(video.readyState>=2&&video.currentTime!==lastVT){lastVT=video.currentTime;try{processFrame();}catch(e){console.error(e);}}
+  requestAnimationFrame(loop);
+}
+function processFrame(){
+  var W=video.videoWidth,H=video.videoHeight; if(!W)return;
+  if(cv.width!==W||cv.height!==H){cv.width=W;cv.height=H;fitCanvas();}
+  ctx.save();if(mirror){ctx.translate(W,0);ctx.scale(-1,1);}ctx.drawImage(video,0,0,W,H);ctx.restore();
+  var p=null,side='left';
+  if(landmarker){
+    var ts=performance.now();if(ts<=lastTs)ts=lastTs+1;lastTs=ts;
+    var r=landmarker.detectForVideo(video,ts);
+    if(r&&r.landmarks&&r.landmarks.length){
+      p=r.landmarks[0].map(function(q){return{x:(mirror?1-q.x:q.x)*W,y:q.y*H,v:(q.visibility==null?1:q.visibility)};});
+      var sum=function(s){var t=0,o=IDX[s];for(var k in o)t+=p[o[k]].v;return t;};
+      side=sum('left')>=sum('right')?'left':'right';
+    }
+  }
+  var a=computeAngles(p,side),m=detectMarker(W,H,p); lastMarker=m.found?m:null;
+  if(landmarker)updateState(a,m,H);
+  draw(W,H,p,side,a,m);updateChips(a);
+}
+
+/* ---------- Drawing ---------- */
+function draw(W,H,p,side,a,m){
+  var fs=Math.max(14,W/45),lw=Math.max(2,W/400),lineY=S.lineY*H;
+  if(S.showMask&&maskPts.length){var sc=W/small.width;ctx.fillStyle='rgba(255,0,255,.7)';maskPts.forEach(function(pt){ctx.fillRect(pt[0]*sc,pt[1]*sc,sc,sc);});}
+  if(S.torso&&m.region){ctx.strokeStyle='rgba(255,255,255,.25)';ctx.setLineDash([6,6]);ctx.lineWidth=1;ctx.strokeRect(m.region.x,m.region.y,m.region.w,m.region.h);ctx.setLineDash([]);}
+  var hit=m.found&&m.bottom>=lineY;
+  ctx.strokeStyle=hit?'#22c55e':'#22d3ee';ctx.lineWidth=lw*2;ctx.setLineDash([lw*6,lw*4]);
+  ctx.beginPath();ctx.moveTo(0,lineY);ctx.lineTo(W,lineY);ctx.stroke();ctx.setLineDash([]);
+  ctx.fillStyle=ctx.strokeStyle;ctx.beginPath();ctx.arc(W-fs*1.2,lineY,fs*0.8,0,7);ctx.fill();
+  ctx.font='bold '+fs+'px sans-serif';ctx.fillText('TARGET LINE',8,lineY-6);
+  if(m.found){ctx.strokeStyle=hit?'#22c55e':'#facc15';ctx.lineWidth=lw*1.5;ctx.strokeRect(m.left,m.top,m.right-m.left,m.bottom-m.top);
+    ctx.fillStyle=ctx.strokeStyle;ctx.beginPath();ctx.arc(m.cx,m.cy,lw*3,0,7);ctx.fill();}
+  if(p){
+    var i=IDX[side],g=function(n){return p[i[n]];};
+    [['ear','sh'],['sh','el'],['el','wr'],['sh','hip'],['hip','kn'],['kn','an']].forEach(function(s){
+      if(g(s[0]).v<0.3||g(s[1]).v<0.3)return;ctx.strokeStyle='rgba(255,255,255,.85)';ctx.lineWidth=lw*1.5;
+      ctx.beginPath();ctx.moveTo(g(s[0]).x,g(s[0]).y);ctx.lineTo(g(s[1]).x,g(s[1]).y);ctx.stroke();});
+    var at={knee:'kn',hip:'hip',elbow:'el',neck:'sh'};
+    JOINTS.forEach(function(j){
+      var pt=g(at[j.k]),v=a[j.k],c=S.joints[j.k]; if(pt.v<0.3)return;
+      var good=v!=null&&v>=c.min&&v<=c.max,col=!c.on?'#94a3b8':good?'#22c55e':'#ef4444';
+      ctx.fillStyle=col;ctx.beginPath();ctx.arc(pt.x,pt.y,lw*4,0,7);ctx.fill();
+      if(v!=null){var txt=j.label+' '+v+'°',tw=ctx.measureText(txt).width,oy=j.k==='neck'?-fs*2.2:-fs*1.2;
+        ctx.fillStyle='rgba(0,0,0,.6)';ctx.fillRect(pt.x-tw/2-4,pt.y+oy-fs,tw+8,fs*1.3);ctx.fillStyle=col;ctx.fillText(txt,pt.x-tw/2,pt.y+oy);}
+    });
+  }
+}
+function updateChips(a){
+  JOINTS.forEach(function(j){var v=a[j.k],c=S.joints[j.k],el=$('chip_'+j.k);
+    $('ang_'+j.k).textContent=v==null?'–':v+'°';
+    el.classList.toggle('ok',c.on&&v!=null&&v>=c.min&&v<=c.max);
+    el.classList.toggle('bad',c.on&&(v==null||v<c.min||v>c.max));});
+}
+
+/* ---------- Pointer: drag line / pick colour ---------- */
+var pickMode=false,dragging=false;
+function toCanvas(e){var r=cv.getBoundingClientRect();return{x:(e.clientX-r.left)/r.width*cv.width,y:(e.clientY-r.top)/r.height*cv.height};}
+function setLineFrom(y){S.lineY=Math.min(.95,Math.max(.05,y/cv.height));$('lineY').value=S.lineY;syncLabels();}
+cv.addEventListener('pointerdown',function(e){
+  if(!cv.width)return;var pt=toCanvas(e);
+  if(pickMode){
+    var n=9,x=Math.max(0,Math.min(cv.width-n,Math.floor(pt.x-n/2))),y=Math.max(0,Math.min(cv.height-n,Math.floor(pt.y-n/2)));
+    var d=ctx.getImageData(x,y,n,n).data,r=0,g=0,b=0;for(var i=0;i<d.length;i+=4){r+=d[i];g+=d[i+1];b+=d[i+2];}
+    var c=n*n,hsv=rgb2hsv(r/c,g/c,b/c);
+    S.hue=Math.round(hsv[0]);S.sMin=+Math.max(0.15,hsv[1]*0.6).toFixed(2);S.vMin=+Math.max(0.15,hsv[2]*0.55).toFixed(2);
+    save();syncInputs();pickMode=false;$('pickBtn').classList.remove('on');addLog('Marker colour set (hue '+S.hue+'°)');return;
+  }
+  dragging=true;try{cv.setPointerCapture(e.pointerId);}catch(_){} setLineFrom(pt.y);
+});
+cv.addEventListener('pointermove',function(e){if(dragging)setLineFrom(toCanvas(e).y);});
+cv.addEventListener('pointerup',function(){if(dragging){dragging=false;save();}});
+cv.addEventListener('pointercancel',function(){dragging=false;});
+
+/* ---------- Buttons ---------- */
+function onTap(id,fn){$(id).addEventListener('click',fn);}
+onTap('startBtn',function(){
+  if(running){running=false;stopStream();$('startBtn').textContent='▶ Start';setState('Stopped');if(wakeLock){wakeLock.release();wakeLock=null;}return;}
+  if(!window.isSecureContext){alert('Camera is blocked because this page is not opened from an https:// link.\n\nHost the file on GitHub Pages or Netlify and open that link in Safari or Chrome.');return;}
+  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){alert('This browser view cannot use the camera.\n\nIf you opened it inside Teams, OneDrive, WhatsApp or Gmail, tap "Open in browser" / "Open in Safari/Chrome".');return;}
+  try{if(!actx){var AC=window.AudioContext||window.webkitAudioContext;if(AC)actx=new AC();}if(actx&&actx.state==='suspended')actx.resume();}catch(e){}
+  setState('Starting camera…');
+  startCamera().then(function(){
+    $('msg').style.display='none';running=true;$('startBtn').textContent='■ Stop';requestAnimationFrame(loop);
+    if(navigator.wakeLock)navigator.wakeLock.request('screen').then(function(w){wakeLock=w;}).catch(function(){});
+    if(!landmarker)loadModel();
+  }).catch(function(e){
+    setState('Camera not started');
+    var hint=e&&e.name==='NotAllowedError'?'\n\nCamera permission was denied.\niPhone: Settings › Safari › Camera › Allow (or tap "aA" › Website Settings).\nAndroid Chrome: tap the lock icon beside the URL › Permissions › Camera › Allow.':'';
+    alert('Could not start camera: '+(e&&(e.name+' – '+e.message))+hint);
+  });
+});
+onTap('flipBtn',function(){facing=facing==='environment'?'user':'environment';if(running)startCamera().catch(function(e){alert(e.message);});});
+onTap('pickBtn',function(){pickMode=!pickMode;$('pickBtn').classList.toggle('on',pickMode);setState(pickMode?'Tap the tape on the video':(running?stateLabel():'Not started'));});
+onTap('setLineBtn',function(){if(!lastMarker){alert('Marker not detected yet. Start the camera and pick the tape colour first.');return;}S.lineY=Math.min(.95,lastMarker.bottom/cv.height);save();syncInputs();addLog('Line set at marker position');});
+onTap('resetBtn',function(){count=0;noRep=0;state='waiting';rep=null;$('count').textContent=0;$('norep').textContent=0;$('log').innerHTML='';});
+document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible'&&running&&navigator.wakeLock)navigator.wakeLock.request('screen').then(function(w){wakeLock=w;}).catch(function(){});});
+
+buildUI();
+if(!window.isSecureContext){
+  $('msg').innerHTML='⚠️ Camera is blocked on this link.<br>Open the app from an <b>https://</b> link (GitHub Pages / Netlify) in Safari or Chrome — not from a OneDrive/Teams preview or a downloaded file.';
+}
+})();
+</script>
+</body>
+</html>
